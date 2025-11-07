@@ -127,8 +127,8 @@ def _parse_args():
     )
     parser.add_argument(
         "--frame_nums",
-        nargs='+',
         type=int,
+        nargs='+',
         default=None,
         help="List of frame counts corresponding to each prompt. Overrides --frame_num if provided."
     )
