@@ -307,6 +307,12 @@ def _parse_args():
         default=80,
         help="Number of frames per clip, 48 or 80 or others (must be multiple of 4) for 14B s2v"
     )
+    parser.add_argument(
+        "--tf32",
+        type=str2bool,
+        default=False,
+        help="Whether to enable tf32 mode for faster inference on supported GPUs."
+    )
     args = parser.parse_args()
     _validate_args(args)
 
@@ -331,6 +337,15 @@ def generate(args):
     local_rank = int(os.getenv("LOCAL_RANK", 0))
     device = local_rank
     _init_logging(rank)
+
+    if args.tf32:
+        torch.backends.cuda.matmul.allow_tf32 = True
+        torch.backends.cudnn.allow_tf32 = True
+        logging.info("Enabled TF32.")
+    else:
+        torch.backends.cuda.matmul.allow_tf32 = False
+        torch.backends.cudnn.allow_tf32 = False
+        logging.info("Disabled TF32.")
 
     if args.offload_model is None:
         args.offload_model = False if world_size > 1 else True
@@ -377,7 +392,6 @@ def generate(args):
 
     # 🔹 Handle single or multiple prompts
     prompt_list = args.prompts if args.prompts else [args.prompt]
-    logging.info(f"🎬 Generating {len(prompt_list)} prompt(s) — model will load once.")
 
     # ---- Load model once ----
     if "t2v" in args.task:
@@ -443,6 +457,8 @@ def generate(args):
             t5_cpu=args.t5_cpu,
             convert_model_dtype=args.convert_model_dtype
         )
+
+    # 
         
     # ---- Generate for each prompt ----
     for idx, current_prompt in enumerate(prompt_list):
