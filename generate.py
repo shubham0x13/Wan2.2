@@ -164,10 +164,23 @@ def _parse_args():
         default=False,
         help="Whether to use FSDP for DiT.")
     parser.add_argument(
-        "--save_file",
+        "--save_file_format",
         type=str,
-        default=None,
-        help="The file to save the generated video to.")
+        default="video_{task}_{index}.mp4",
+        help=(
+            "Filename format for saving outputs. Available placeholders: "
+            "{index} → prompt index (0, 1, 2, ...), "
+            "{timestamp} → current date/time, "
+            "{task} → current task name. "
+            "Example: 'video_{task}_{index}.mp4' or 'result_{timestamp}.mp4'"
+        )
+    )
+    parser.add_argument(
+        "--save_dir",
+        type=str,
+        default="outputs",
+        help="Directory to save generated videos (default: ./outputs)."
+    )
     parser.add_argument(
         "--prompt",
         type=str,
@@ -412,7 +425,8 @@ def generate(args):
             config=cfg,
             checkpoint_dir=args.ckpt_dir,
             device_id=device,
-            rank=rank, t5_fsdp=args.t5_fsdp,
+            rank=rank,
+            t5_fsdp=args.t5_fsdp,
             dit_fsdp=args.dit_fsdp,
             use_sp=(args.ulysses_size > 1),
             t5_cpu=args.t5_cpu,
@@ -451,15 +465,14 @@ def generate(args):
             config=cfg,
             checkpoint_dir=args.ckpt_dir,
             device_id=device,
-            rank=rank, t5_fsdp=args.t5_fsdp,
+            rank=rank,
+            t5_fsdp=args.t5_fsdp,
             dit_fsdp=args.dit_fsdp,
             use_sp=(args.ulysses_size > 1),
             t5_cpu=args.t5_cpu,
             convert_model_dtype=args.convert_model_dtype
         )
 
-    # 
-        
     # ---- Generate for each prompt ----
     for idx, current_prompt in enumerate(prompt_list):
         args.prompt = current_prompt
@@ -587,8 +600,24 @@ def generate(args):
 
         # ---- Save video ----
         if rank == 0:
-            save_path = f"video_{idx}.mp4" if args.save_file is None else f"{os.path.splitext(args.save_file)[0]}_{idx}.mp4"
-            
+            os.makedirs(args.save_dir, exist_ok=True)
+
+            # Extract filename pattern and placeholders
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+
+            # Build filename from format
+            filename = args.save_file_format.format(
+                index=idx, 
+                timestamp=timestamp,
+                task=args.task
+            )
+
+            if not filename.endswith(".mp4"):
+                filename += ".mp4"
+
+            # Final output path (always inside save_dir)
+            save_path = os.path.join(args.save_dir, filename)
+
             logging.info(f"Saving generated video to {save_path}")
             save_video(
                 tensor=video[None],
