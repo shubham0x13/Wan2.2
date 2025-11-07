@@ -167,6 +167,12 @@ def _parse_args():
         default=None,
         help="The prompt to generate the video from.")
     parser.add_argument(
+        "--prompts",
+        nargs='+',
+        default=None,
+        help="List of text prompts to generate sequentially without reloading the model."
+    )
+    parser.add_argument(
         "--use_prompt_extend",
         action="store_true",
         default=False,
@@ -362,99 +368,38 @@ def generate(args):
     if args.ulysses_size > 1:
         assert cfg.num_heads % args.ulysses_size == 0, f"`{cfg.num_heads=}` cannot be divided evenly by `{args.ulysses_size=}`."
 
-    logging.info(f"Generation job args: {args}")
-    logging.info(f"Generation model config: {cfg}")
+    # 🔹 Handle single or multiple prompts
+    prompt_list = args.prompts if args.prompts else [args.prompt]
+    logging.info(f"🎬 Generating {len(prompt_list)} prompt(s) — model will load once.")
 
-    if dist.is_initialized():
-        base_seed = [args.base_seed] if rank == 0 else [None]
-        dist.broadcast_object_list(base_seed, src=0)
-        args.base_seed = base_seed[0]
-
-    logging.info(f"Input prompt: {args.prompt}")
-    img = None
-    if args.image is not None:
-        img = Image.open(args.image).convert("RGB")
-        logging.info(f"Input image: {args.image}")
-
-    # prompt extend
-    if args.use_prompt_extend:
-        logging.info("Extending prompt ...")
-        if rank == 0:
-            prompt_output = prompt_expander(
-                args.prompt,
-                image=img,
-                tar_lang=args.prompt_extend_target_lang,
-                seed=args.base_seed)
-            if prompt_output.status == False:
-                logging.info(
-                    f"Extending prompt failed: {prompt_output.message}")
-                logging.info("Falling back to original prompt.")
-                input_prompt = args.prompt
-            else:
-                input_prompt = prompt_output.prompt
-            input_prompt = [input_prompt]
-        else:
-            input_prompt = [None]
-        if dist.is_initialized():
-            dist.broadcast_object_list(input_prompt, src=0)
-        args.prompt = input_prompt[0]
-        logging.info(f"Extended prompt: {args.prompt}")
-
+    # ---- Load model once ----
     if "t2v" in args.task:
         logging.info("Creating WanT2V pipeline.")
-        wan_t2v = wan.WanT2V(
-            config=cfg,
+        pipeline = wan.WanT2V(
+            config=cfg, 
             checkpoint_dir=args.ckpt_dir,
             device_id=device,
-            rank=rank,
-            t5_fsdp=args.t5_fsdp,
+            rank=rank, t5_fsdp=args.t5_fsdp,
             dit_fsdp=args.dit_fsdp,
             use_sp=(args.ulysses_size > 1),
             t5_cpu=args.t5_cpu,
-            convert_model_dtype=args.convert_model_dtype,
+            convert_model_dtype=args.convert_model_dtype
         )
-
-        logging.info(f"Generating video ...")
-        video = wan_t2v.generate(
-            args.prompt,
-            size=SIZE_CONFIGS[args.size],
-            frame_num=args.frame_num,
-            shift=args.sample_shift,
-            sample_solver=args.sample_solver,
-            sampling_steps=args.sample_steps,
-            guide_scale=args.sample_guide_scale,
-            seed=args.base_seed,
-            offload_model=args.offload_model)
     elif "ti2v" in args.task:
         logging.info("Creating WanTI2V pipeline.")
-        wan_ti2v = wan.WanTI2V(
+        pipeline = wan.WanTI2V(
             config=cfg,
             checkpoint_dir=args.ckpt_dir,
             device_id=device,
-            rank=rank,
-            t5_fsdp=args.t5_fsdp,
+            rank=rank, t5_fsdp=args.t5_fsdp,
             dit_fsdp=args.dit_fsdp,
             use_sp=(args.ulysses_size > 1),
             t5_cpu=args.t5_cpu,
-            convert_model_dtype=args.convert_model_dtype,
+            convert_model_dtype=args.convert_model_dtype
         )
-
-        logging.info(f"Generating video ...")
-        video = wan_ti2v.generate(
-            args.prompt,
-            img=img,
-            size=SIZE_CONFIGS[args.size],
-            max_area=MAX_AREA_CONFIGS[args.size],
-            frame_num=args.frame_num,
-            shift=args.sample_shift,
-            sample_solver=args.sample_solver,
-            sampling_steps=args.sample_steps,
-            guide_scale=args.sample_guide_scale,
-            seed=args.base_seed,
-            offload_model=args.offload_model)
     elif "animate" in args.task:
-        logging.info("Creating Wan-Animate pipeline.")
-        wan_animate = wan.WanAnimate(
+        logging.info("Creating WanAnimate pipeline.")
+        pipeline = wan.WanAnimate(
             config=cfg,
             checkpoint_dir=args.ckpt_dir,
             device_id=device,
@@ -466,22 +411,9 @@ def generate(args):
             convert_model_dtype=args.convert_model_dtype,
             use_relighting_lora=args.use_relighting_lora
         )
-
-        logging.info(f"Generating video ...")
-        video = wan_animate.generate(
-            src_root_path=args.src_root_path,
-            replace_flag=args.replace_flag,
-            refert_num = args.refert_num,
-            clip_len=args.frame_num,
-            shift=args.sample_shift,
-            sample_solver=args.sample_solver,
-            sampling_steps=args.sample_steps,
-            guide_scale=args.sample_guide_scale,
-            seed=args.base_seed,
-            offload_model=args.offload_model)
     elif "s2v" in args.task:
         logging.info("Creating WanS2V pipeline.")
-        wan_s2v = wan.WanS2V(
+        pipeline = wan.WanS2V(
             config=cfg,
             checkpoint_dir=args.ckpt_dir,
             device_id=device,
@@ -490,79 +422,160 @@ def generate(args):
             dit_fsdp=args.dit_fsdp,
             use_sp=(args.ulysses_size > 1),
             t5_cpu=args.t5_cpu,
-            convert_model_dtype=args.convert_model_dtype,
-        )
-        logging.info(f"Generating video ...")
-        video = wan_s2v.generate(
-            input_prompt=args.prompt,
-            ref_image_path=args.image,
-            audio_path=args.audio,
-            enable_tts=args.enable_tts,
-            tts_prompt_audio=args.tts_prompt_audio,
-            tts_prompt_text=args.tts_prompt_text,
-            tts_text=args.tts_text,
-            num_repeat=args.num_clip,
-            pose_video=args.pose_video,
-            max_area=MAX_AREA_CONFIGS[args.size],
-            infer_frames=args.infer_frames,
-            shift=args.sample_shift,
-            sample_solver=args.sample_solver,
-            sampling_steps=args.sample_steps,
-            guide_scale=args.sample_guide_scale,
-            seed=args.base_seed,
-            offload_model=args.offload_model,
-            init_first_frame=args.start_from_ref,
+            convert_model_dtype=args.convert_model_dtype
         )
     else:
         logging.info("Creating WanI2V pipeline.")
-        wan_i2v = wan.WanI2V(
+        pipeline = wan.WanI2V(
             config=cfg,
             checkpoint_dir=args.ckpt_dir,
             device_id=device,
-            rank=rank,
-            t5_fsdp=args.t5_fsdp,
+            rank=rank, t5_fsdp=args.t5_fsdp,
             dit_fsdp=args.dit_fsdp,
             use_sp=(args.ulysses_size > 1),
             t5_cpu=args.t5_cpu,
-            convert_model_dtype=args.convert_model_dtype,
+            convert_model_dtype=args.convert_model_dtype
         )
-        logging.info("Generating video ...")
-        video = wan_i2v.generate(
-            args.prompt,
-            img,
-            max_area=MAX_AREA_CONFIGS[args.size],
-            frame_num=args.frame_num,
-            shift=args.sample_shift,
-            sample_solver=args.sample_solver,
-            sampling_steps=args.sample_steps,
-            guide_scale=args.sample_guide_scale,
-            seed=args.base_seed,
-            offload_model=args.offload_model)
+        
+    # ---- Generate for each prompt ----
+    for idx, current_prompt in enumerate(prompt_list, start=1):
+        args.prompt = current_prompt
+        logging.info(f"\n[{idx}/{len(prompt_list)}] Generating for prompt: {args.prompt}")
 
-    if rank == 0:
-        if args.save_file is None:
-            formatted_time = datetime.now().strftime("%Y%m%d_%H%M%S")
-            formatted_prompt = args.prompt.replace(" ", "_").replace("/",
-                                                                     "_")[:50]
-            suffix = '.mp4'
-            args.save_file = f"{args.task}_{args.size.replace('*','x') if sys.platform=='win32' else args.size}_{args.ulysses_size}_{formatted_prompt}_{formatted_time}" + suffix
+        # Broadcast base seed (important for multi-GPU consistency)
+        if dist.is_initialized():
+            base_seed = [args.base_seed] if rank == 0 else [None]
+            dist.broadcast_object_list(base_seed, src=0)
+            args.base_seed = base_seed[0]
 
-        logging.info(f"Saving generated video to {args.save_file}")
-        save_video(
-            tensor=video[None],
-            save_file=args.save_file,
-            fps=cfg.sample_fps,
-            nrow=1,
-            normalize=True,
-            value_range=(-1, 1))
-        if "s2v" in args.task:
-            if args.enable_tts is False:
-                merge_video_audio(video_path=args.save_file, audio_path=args.audio)
+        img = None
+        if args.image is not None:
+            img = Image.open(args.image).convert("RGB")
+            logging.info(f"Input image: {args.image}")
+
+        # prompt extension
+        if args.use_prompt_extend:
+            logging.info("Extending prompt ...")
+            if rank == 0:
+                prompt_output = prompt_expander(
+                    args.prompt,
+                    image=img,
+                    tar_lang=args.prompt_extend_target_lang,
+                    seed=args.base_seed)
+                if not prompt_output.status:
+                    logging.info(f"Extending prompt failed: {prompt_output.message}")
+                    input_prompt = args.prompt
+                else:
+                    input_prompt = prompt_output.prompt
+                input_prompt = [input_prompt]
             else:
-                merge_video_audio(video_path=args.save_file, audio_path="tts.wav")
-    del video
+                input_prompt = [None]
+            if dist.is_initialized():
+                dist.broadcast_object_list(input_prompt, src=0)
+            args.prompt = input_prompt[0]
+            logging.info(f"Extended prompt: {args.prompt}")
 
-    torch.cuda.synchronize()
+        # ---- Generate ----
+        if "t2v" in args.task:
+            logging.info("Generating video with T2V pipeline.")
+            video = pipeline.generate(
+                args.prompt, 
+                size=SIZE_CONFIGS[args.size],
+                frame_num=args.frame_num,
+                shift=args.sample_shift,
+                sample_solver=args.sample_solver,
+                sampling_steps=args.sample_steps,
+                guide_scale=args.sample_guide_scale,
+                seed=args.base_seed,
+                offload_model=args.offload_model
+            )
+        elif "ti2v" in args.task:
+            logging.info("Generating video with TI2V pipeline.")
+            video = pipeline.generate(
+                args.prompt,
+                img=img,
+                size=SIZE_CONFIGS[args.size],
+                max_area=MAX_AREA_CONFIGS[args.size],
+                frame_num=args.frame_num,
+                shift=args.sample_shift,
+                sample_solver=args.sample_solver,
+                sampling_steps=args.sample_steps,
+                guide_scale=args.sample_guide_scale,
+                seed=args.base_seed,
+                offload_model=args.offload_model
+                )
+        elif "animate" in args.task:
+            logging.info("Generating video with Animate pipeline.")
+            video = pipeline.generate(
+                src_root_path=args.src_root_path,
+                replace_flag=args.replace_flag,
+                refert_num=args.refert_num,
+                clip_len=args.frame_num,
+                shift=args.sample_shift,
+                sample_solver=args.sample_solver,
+                sampling_steps=args.sample_steps,
+                guide_scale=args.sample_guide_scale,
+                seed=args.base_seed,
+                offload_model=args.offload_model
+            )
+        elif "s2v" in args.task:
+            logging.info("Generating video with S2V pipeline.")
+            video = pipeline.generate(
+                input_prompt=args.prompt,
+                ref_image_path=args.image,
+                audio_path=args.audio,
+                enable_tts=args.enable_tts,
+                tts_prompt_audio=args.tts_prompt_audio,
+                tts_prompt_text=args.tts_prompt_text,
+                tts_text=args.tts_text,
+                num_repeat=args.num_clip,
+                pose_video=args.pose_video,
+                max_area=MAX_AREA_CONFIGS[args.size],
+                infer_frames=args.infer_frames,
+                shift=args.sample_shift,
+                sample_solver=args.sample_solver,
+                sampling_steps=args.sample_steps,
+                guide_scale=args.sample_guide_scale,
+                seed=args.base_seed,
+                offload_model=args.offload_model,
+                init_first_frame=args.start_from_ref
+            )
+        else:
+            logging.info("Generating video with I2V pipeline.")
+            video = pipeline.generate(
+                args.prompt,
+                img, max_area=MAX_AREA_CONFIGS[args.size],
+                frame_num=args.frame_num,
+                shift=args.sample_shift,
+                sample_solver=args.sample_solver,
+                sampling_steps=args.sample_steps,
+                guide_scale=args.sample_guide_scale,
+                seed=args.base_seed,
+                offload_model=args.offload_model
+            )
+
+        # ---- Save video ----
+        if rank == 0:
+            save_path = f"video_{idx}.mp4" if args.save_file is None else f"{os.path.splitext(args.save_file)[0]}_{idx}.mp4"
+            
+            logging.info(f"Saving generated video to {save_path}")
+            save_video(
+                tensor=video[None],
+                save_file=save_path,
+                fps=cfg.sample_fps,
+                nrow=1,
+                normalize=True,
+                value_range=(-1, 1)
+            )
+            if "s2v" in args.task:
+                audio_path = args.audio if not args.enable_tts else "tts.wav"
+                merge_video_audio(video_path=save_path, audio_path=audio_path)
+
+        del video
+
+        torch.cuda.synchronize()
+        # torch.cuda.empty_cache()
+
     if dist.is_initialized():
         dist.barrier()
         dist.destroy_process_group()
