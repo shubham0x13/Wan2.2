@@ -126,6 +126,13 @@ def _parse_args():
         help="How many frames of video are generated. The number should be 4n+1"
     )
     parser.add_argument(
+        "--frame_nums",
+        nargs='+',
+        type=int,
+        default=None,
+        help="List of frame counts corresponding to each prompt. Overrides --frame_num if provided."
+    )
+    parser.add_argument(
         "--ckpt_dir",
         type=str,
         default=None,
@@ -438,9 +445,17 @@ def generate(args):
         )
         
     # ---- Generate for each prompt ----
-    for idx, current_prompt in enumerate(prompt_list, start=1):
+    for idx, current_prompt in enumerate(prompt_list):
         args.prompt = current_prompt
+
+        # Choose frame number for this prompt
+        if args.frame_nums and len(args.frame_nums) >= idx:
+            current_frame_num = args.frame_nums[idx]
+        else:
+            current_frame_num = args.frame_num
+
         logging.info(f"\n[{idx}/{len(prompt_list)}] Generating for prompt: {args.prompt}")
+        logging.info(f"Using frame_num = {current_frame_num}")
 
         # Broadcast base seed (important for multi-GPU consistency)
         if dist.is_initialized():
@@ -481,7 +496,7 @@ def generate(args):
             video = pipeline.generate(
                 args.prompt, 
                 size=SIZE_CONFIGS[args.size],
-                frame_num=args.frame_num,
+                frame_num=current_frame_num,
                 shift=args.sample_shift,
                 sample_solver=args.sample_solver,
                 sampling_steps=args.sample_steps,
@@ -496,7 +511,7 @@ def generate(args):
                 img=img,
                 size=SIZE_CONFIGS[args.size],
                 max_area=MAX_AREA_CONFIGS[args.size],
-                frame_num=args.frame_num,
+                frame_num=current_frame_num,
                 shift=args.sample_shift,
                 sample_solver=args.sample_solver,
                 sampling_steps=args.sample_steps,
@@ -545,7 +560,7 @@ def generate(args):
             video = pipeline.generate(
                 args.prompt,
                 img, max_area=MAX_AREA_CONFIGS[args.size],
-                frame_num=args.frame_num,
+                frame_num=current_frame_num,
                 shift=args.sample_shift,
                 sample_solver=args.sample_solver,
                 sampling_steps=args.sample_steps,
