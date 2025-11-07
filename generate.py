@@ -313,6 +313,19 @@ def _parse_args():
         default=False,
         help="Whether to enable tf32 mode for faster inference on supported GPUs."
     )
+    parser.add_argument(
+        "--compile",
+        type=str2bool,
+        default=False,
+        help="Whether to compile the model for faster inference."
+    )
+    parser.add_argument(
+        "--compile_mode",
+        type=str,
+        default="max-autotune-no-cudagraphs",
+        choices=["max-autotune-no-cudagraphs", "max-autotune", "reduced-overhead","default"],
+        help="The compilation mode if --compile is set to True."
+    )
     args = parser.parse_args()
     _validate_args(args)
 
@@ -458,7 +471,18 @@ def generate(args):
             convert_model_dtype=args.convert_model_dtype
         )
 
-    # 
+    # Compile the model if --compile is set
+    if args.compile:
+        logging.info(f"Compiling the model with mode: {args.compile_mode} ...")
+        try:
+            pipeline.model = torch.compile(
+                pipeline.model,
+                mode=args.compile_mode,
+                dynamic=False,
+                fullgraph=False,
+            )
+        except Exception as e:
+            logging.warning(f"torch.compile failed: {e}")
         
     # ---- Generate for each prompt ----
     for idx, current_prompt in enumerate(prompt_list):
