@@ -570,19 +570,20 @@ def generate(args):
             )
         elif "ti2v" in args.task:
             logging.info("Generating video with TI2V pipeline.")
-            video = pipeline.generate(
-                args.prompt,
-                img=img,
-                size=SIZE_CONFIGS[args.size],
-                max_area=MAX_AREA_CONFIGS[args.size],
-                frame_num=current_frame_num,
-                shift=args.sample_shift,
-                sample_solver=args.sample_solver,
-                sampling_steps=args.sample_steps,
-                guide_scale=args.sample_guide_scale,
-                seed=args.base_seed,
-                offload_model=args.offload_model
-                )
+            with torch.inference_mode():
+                video = pipeline.generate(
+                    args.prompt,
+                    img=img,
+                    size=SIZE_CONFIGS[args.size],
+                    max_area=MAX_AREA_CONFIGS[args.size],
+                    frame_num=current_frame_num,
+                    shift=args.sample_shift,
+                    sample_solver=args.sample_solver,
+                    sampling_steps=args.sample_steps,
+                    guide_scale=args.sample_guide_scale,
+                    seed=args.base_seed,
+                    offload_model=args.offload_model
+                    )
         elif "animate" in args.task:
             logging.info("Generating video with Animate pipeline.")
             video = pipeline.generate(
