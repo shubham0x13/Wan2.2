@@ -14,7 +14,6 @@ import torch
 import torch.distributed as dist
 from PIL import Image
 
-import wan
 from wan.configs import MAX_AREA_CONFIGS, SIZE_CONFIGS, SUPPORTED_SIZES, WAN_CONFIGS
 from wan.distributed.util import init_distributed_group
 from wan.utils.prompt_extend import DashScopePromptExpander, QwenPromptExpander
@@ -408,8 +407,10 @@ def generate(args):
 
     # ---- Load model once ----
     if "t2v" in args.task:
+        from wan import WanT2V
+
         logging.info("Creating WanT2V pipeline.")
-        pipeline = wan.WanT2V(
+        pipeline = WanT2V(
             config=cfg, 
             checkpoint_dir=args.ckpt_dir,
             device_id=device,
@@ -420,8 +421,10 @@ def generate(args):
             convert_model_dtype=args.convert_model_dtype
         )
     elif "ti2v" in args.task:
+        from wan import WanTI2V
+
         logging.info("Creating WanTI2V pipeline.")
-        pipeline = wan.WanTI2V(
+        pipeline = WanTI2V(
             config=cfg,
             checkpoint_dir=args.ckpt_dir,
             device_id=device,
@@ -433,8 +436,10 @@ def generate(args):
             convert_model_dtype=args.convert_model_dtype
         )
     elif "animate" in args.task:
+        from wan import WanAnimate
+
         logging.info("Creating WanAnimate pipeline.")
-        pipeline = wan.WanAnimate(
+        pipeline = WanAnimate(
             config=cfg,
             checkpoint_dir=args.ckpt_dir,
             device_id=device,
@@ -447,8 +452,10 @@ def generate(args):
             use_relighting_lora=args.use_relighting_lora
         )
     elif "s2v" in args.task:
+        from wan import WanS2V
+
         logging.info("Creating WanS2V pipeline.")
-        pipeline = wan.WanS2V(
+        pipeline = WanS2V(
             config=cfg,
             checkpoint_dir=args.ckpt_dir,
             device_id=device,
@@ -460,8 +467,10 @@ def generate(args):
             convert_model_dtype=args.convert_model_dtype
         )
     else:
+        from wan import WanI2V
+
         logging.info("Creating WanI2V pipeline.")
-        pipeline = wan.WanI2V(
+        pipeline = WanI2V(
             config=cfg,
             checkpoint_dir=args.ckpt_dir,
             device_id=device,
