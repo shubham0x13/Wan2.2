@@ -252,9 +252,11 @@ def load_and_merge_lora_weight(
     model: nn.Module,
     lora_state_dict: dict,
     lora_down_key: str=".lora_down.weight",
-    lora_up_key: str=".lora_up.weight"
+    lora_up_key: str=".lora_up.weight",
+    verbose: bool=False
 ):
     is_native_weight = any("diffusion_model." in key for key in lora_state_dict)
+    
     for key, value in model.named_parameters():
         lora_down_name, lora_up_name, lora_alpha_name = build_lora_names(
             key, lora_down_key, lora_up_key, is_native_weight
@@ -269,6 +271,16 @@ def load_and_merge_lora_weight(
             assert lora_down.dtype == torch.float32
             delta_W = scaling_factor * torch.matmul(lora_up, lora_down)
             value.data = value.data + delta_W
+
+            if verbose:
+                logging.info(f"[LoRA Merge] Applied to: {key}")
+                logging.info(f"  down: {lora_down_name}, up: {lora_up_name}")
+                logging.info(f"  alpha: {lora_alpha}, rank: {rank}, scale: {scaling_factor}")
+                logging.info(f"  delta_W norm: {delta_W.norm().item():.6f}\n")
+
+    if verbose:
+        logging.info("LoRA weights merged successfully.")
+
     return model
 
 
@@ -276,12 +288,13 @@ def load_and_merge_lora_weight_from_safetensors(
     model: nn.Module,
     lora_weight_path:str,
     lora_down_key:str=".lora_down.weight",
-    lora_up_key:str=".lora_up.weight"
+    lora_up_key:str=".lora_up.weight",
+    verbose: bool=False
 ):
     lora_state_dict = {}
     with safe_open(lora_weight_path, framework="pt", device="cpu") as f:
         for key in f.keys():
             lora_state_dict[key] = f.get_tensor(key)
     return load_and_merge_lora_weight(
-        model, lora_state_dict, lora_down_key, lora_up_key
+        model, lora_state_dict, lora_down_key, lora_up_key, verbose
     )
