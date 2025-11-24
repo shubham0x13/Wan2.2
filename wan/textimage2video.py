@@ -28,7 +28,7 @@ from .utils.fm_solvers import (
     retrieve_timesteps,
 )
 from .utils.fm_solvers_unipc import FlowUniPCMultistepScheduler
-from .utils.utils import best_output_size, masks_like
+from .utils.utils import best_output_size, masks_like, load_and_merge_lora_weight_from_safetensors
 
 
 class WanTI2V:
@@ -37,6 +37,7 @@ class WanTI2V:
         self,
         config,
         checkpoint_dir,
+        lora_dir=None,
         device_id=0,
         rank=0,
         t5_fsdp=False,
@@ -54,6 +55,8 @@ class WanTI2V:
                 Object containing model parameters initialized from config.py
             checkpoint_dir (`str`):
                 Path to directory containing model checkpoints
+            lora_dir (`str`, *optional*, defaults to None):
+                Path to LoRA adapter weights to merge with the base model.
             device_id (`int`,  *optional*, defaults to 0):
                 Id of target GPU device
             rank (`int`,  *optional*, defaults to 0):
@@ -101,6 +104,9 @@ class WanTI2V:
 
         logging.info(f"Creating WanModel from {checkpoint_dir}")
         self.model = WanModel.from_pretrained(checkpoint_dir)
+        if lora_dir:
+            lora_path = os.path.join(lora_dir, config.lora_checkpoint)
+            self.model = load_and_merge_lora_weight_from_safetensors(self.model, lora_path)
         self.model = self._configure_model(
             model=self.model,
             use_sp=use_sp,

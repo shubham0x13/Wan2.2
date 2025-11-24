@@ -137,6 +137,11 @@ def _parse_args():
         default=None,
         help="The path to the checkpoint directory.")
     parser.add_argument(
+        "--lora_dir",
+        type=str,
+        default=None,
+        help="The path to the lora directory.")
+    parser.add_argument(
         "--offload_model",
         type=str2bool,
         default=None,
@@ -427,6 +432,7 @@ def generate(args):
         pipeline = WanTI2V(
             config=cfg,
             checkpoint_dir=args.ckpt_dir,
+            lora_dir=args.lora_dir,
             device_id=device,
             rank=rank,
             t5_fsdp=args.t5_fsdp,

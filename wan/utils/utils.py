@@ -4,6 +4,7 @@ import binascii
 import logging
 import os
 import os.path as osp
+import torch.nn as nn
 import shutil
 import subprocess
 
@@ -11,7 +12,9 @@ import imageio
 import torch
 import torchvision
 
-__all__ = ['save_video', 'save_image', 'str2bool']
+from safetensors import safe_open
+
+__all__ = ['save_video', 'save_image', 'str2bool', 'load_and_merge_lora_weight_from_safetensors']
 
 
 def rand_name(length=8, suffix=''):
@@ -236,3 +239,49 @@ def download_cosyvoice_repo(repo_path):
 def download_cosyvoice_model(model_name, model_path):
     from modelscope import snapshot_download
     snapshot_download('iic/{}'.format(model_name), local_dir=model_path)
+
+
+def build_lora_names(key, lora_down_key, lora_up_key, is_native_weight):
+    base = "diffusion_model." if is_native_weight else ""
+    lora_down = base + key.replace(".weight", lora_down_key)
+    lora_up = base + key.replace(".weight", lora_up_key)
+    lora_alpha = base + key.replace(".weight", ".alpha")
+    return lora_down, lora_up, lora_alpha
+
+def load_and_merge_lora_weight(
+    model: nn.Module,
+    lora_state_dict: dict,
+    lora_down_key: str=".lora_down.weight",
+    lora_up_key: str=".lora_up.weight"
+):
+    is_native_weight = any("diffusion_model." in key for key in lora_state_dict)
+    for key, value in model.named_parameters():
+        lora_down_name, lora_up_name, lora_alpha_name = build_lora_names(
+            key, lora_down_key, lora_up_key, is_native_weight
+        )
+        if lora_down_name in lora_state_dict:
+            lora_down = lora_state_dict[lora_down_name]
+            lora_up = lora_state_dict[lora_up_name]
+            lora_alpha = float(lora_state_dict[lora_alpha_name])
+            rank = lora_down.shape[0]
+            scaling_factor = lora_alpha / rank
+            assert lora_up.dtype == torch.float32
+            assert lora_down.dtype == torch.float32
+            delta_W = scaling_factor * torch.matmul(lora_up, lora_down)
+            value.data = value.data + delta_W
+    return model
+
+
+def load_and_merge_lora_weight_from_safetensors(
+    model: nn.Module,
+    lora_weight_path:str,
+    lora_down_key:str=".lora_down.weight",
+    lora_up_key:str=".lora_up.weight"
+):
+    lora_state_dict = {}
+    with safe_open(lora_weight_path, framework="pt", device="cpu") as f:
+        for key in f.keys():
+            lora_state_dict[key] = f.get_tensor(key)
+    return load_and_merge_lora_weight(
+        model, lora_state_dict, lora_down_key, lora_up_key
+    )
