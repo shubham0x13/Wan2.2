@@ -38,7 +38,7 @@ class WanTI2V:
         self,
         config,
         checkpoint_dir,
-        lora_dir=None,
+        lora_path=None,
         device_id=0,
         rank=0,
         lora_alpha=1.0,
@@ -107,8 +107,7 @@ class WanTI2V:
 
         logging.info(f"Creating WanModel from {checkpoint_dir}")
         self.model = WanModel.from_pretrained(checkpoint_dir)
-        if lora_dir:
-            lora_path = os.path.join(lora_dir, config.lora_checkpoint)
+        if lora_path:
             self.model = load_and_merge_lora_weight_from_safetensors(
                 self.model, lora_path, device=self.device, torch_dtype=self.param_dtype, alpha=self.lora_alpha
             )

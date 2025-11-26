@@ -137,10 +137,10 @@ def _parse_args():
         default=None,
         help="The path to the checkpoint directory.")
     parser.add_argument(
-        "--lora_dir",
+        "--lora_path",
         type=str,
         default=None,
-        help="The path to the lora directory.")
+        help="The path to the lora file.")
     parser.add_argument(
         "--lora_alpha",
         type=float,
@@ -437,7 +437,7 @@ def generate(args):
         pipeline = WanTI2V(
             config=cfg,
             checkpoint_dir=args.ckpt_dir,
-            lora_dir=args.lora_dir,
+            lora_path=args.lora_path,
             device_id=device,
             rank=rank,
             lora_alpha=args.lora_alpha,
