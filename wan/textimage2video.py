@@ -28,7 +28,8 @@ from .utils.fm_solvers import (
     retrieve_timesteps,
 )
 from .utils.fm_solvers_unipc import FlowUniPCMultistepScheduler
-from .utils.utils import best_output_size, masks_like, load_and_merge_lora_weight_from_safetensors
+from .utils.utils import best_output_size, masks_like
+from .utils.lora_loader import load_and_merge_lora_weight_from_safetensors
 
 
 class WanTI2V:
@@ -40,6 +41,7 @@ class WanTI2V:
         lora_dir=None,
         device_id=0,
         rank=0,
+        lora_alpha=1.0,
         t5_fsdp=False,
         dit_fsdp=False,
         use_sp=False,
@@ -80,6 +82,7 @@ class WanTI2V:
         self.rank = rank
         self.t5_cpu = t5_cpu
         self.init_on_cpu = init_on_cpu
+        self.lora_alpha = lora_alpha
 
         self.num_train_timesteps = config.num_train_timesteps
         self.param_dtype = config.param_dtype
@@ -106,7 +109,9 @@ class WanTI2V:
         self.model = WanModel.from_pretrained(checkpoint_dir)
         if lora_dir:
             lora_path = os.path.join(lora_dir, config.lora_checkpoint)
-            self.model = load_and_merge_lora_weight_from_safetensors(self.model, lora_path, verbose=True)
+            self.model = load_and_merge_lora_weight_from_safetensors(
+                self.model, lora_path, device=self.device, torch_dtype=self.param_dtype, alpha=self.lora_alpha
+            )
         self.model = self._configure_model(
             model=self.model,
             use_sp=use_sp,

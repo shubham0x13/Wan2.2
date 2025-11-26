@@ -142,6 +142,11 @@ def _parse_args():
         default=None,
         help="The path to the lora directory.")
     parser.add_argument(
+        "--lora_alpha",
+        type=float,
+        default=1.0,
+        help="The alpha value for LoRA scaling.")
+    parser.add_argument(
         "--offload_model",
         type=str2bool,
         default=None,
@@ -435,6 +440,7 @@ def generate(args):
             lora_dir=args.lora_dir,
             device_id=device,
             rank=rank,
+            lora_alpha=args.lora_alpha,
             t5_fsdp=args.t5_fsdp,
             dit_fsdp=args.dit_fsdp,
             use_sp=(args.ulysses_size > 1),
