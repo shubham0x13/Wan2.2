@@ -43,7 +43,19 @@ class GeneralLoRALoader:
                 updated_num += 1
         print(f"{updated_num} tensors are updated by LoRA.")
 
+def _normalize_device_name(device: str) -> str:
+    if device is None:
+        return "cpu"
+    if isinstance(device, torch.device):
+        ds = str(device)
+    else:
+        ds = str(device)
+    if ds.startswith("cuda"):
+        return "cuda"
+    return "cpu"
+
 def load_state_dict_from_safetensors(file_path: str, device="cpu", torch_dtype=None)-> dict:
+    device = _normalize_device_name(device)
     state_dict = {}
     with safe_open(file_path, framework="pt", device=device) as f:
         for key in f.keys():
@@ -61,6 +73,7 @@ def load_and_merge_lora_weight_from_safetensors(
     alpha: float=1.0,
     hotload: bool=False
 ) -> torch.nn.Module:
+    device = _normalize_device_name(device)
     lora_state_dict = load_state_dict_from_safetensors(lora_weight_path, torch_dtype=torch_dtype, device=device)
 
     if hotload:
